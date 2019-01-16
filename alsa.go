@@ -292,8 +292,8 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	if bytesPerSample != 2 {
 		return nil, fmt.Errorf("only signed 16 bit PCM samples are supported, please convert your samples")
 	}
-	if sampleRate != 44100 {
-		return nil, fmt.Errorf("only 44100 Hz is supported, please resample")
+	if sampleRate != 44100 && sampleRate != 48000 {
+		return nil, fmt.Errorf("only 44100 Hz and 48000 are supported, please resample")
 	}
 	dev, err := openDevice("/dev/snd/pcmC0D0p")
 	if err != nil {
