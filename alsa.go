@@ -271,7 +271,9 @@ func (dev *device) write(frames []byte) (int, error) {
 	}
 	err := ioctl(dev.fd, sndrvPcmIoctlWriteiFrames, uintptr(unsafe.Pointer(xfer)))
 	written := int(xfer.result) * int(dev.sampleSize())
-	if err != nil {
+	if err == syscall.EPIPE || err == syscall.EAGAIN {
+		return written, err
+	} else if err != nil {
 		return written, fmt.Errorf("writing frame data: %s", err.Error())
 	}
 
