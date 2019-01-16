@@ -4,7 +4,6 @@ package alsa
 import (
 	"fmt"
 	"math/bits"
-	"os"
 	"syscall"
 	"unsafe"
 )
@@ -147,7 +146,7 @@ func ioctl(fd, req, data uintptr) error {
 }
 
 func openDevice(devName string) (*device, error) {
-	f, err := syscall.Open(devName, os.O_RDWR, 0644)
+	f, err := syscall.Open(devName, syscall.O_RDWR, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open alsa device %s: %s", devName, err.Error())
 	}
