@@ -9,7 +9,10 @@ import (
 )
 
 type device struct {
-	fd uintptr
+	fd         uintptr
+	channels   uint32
+	format     uint32
+	sampleRate uint32
 }
 
 type snd_pcm_info struct {
@@ -163,7 +166,7 @@ func openDevice(devName string) (*device, error) {
 		fmt.Println(string(info.subname[:]))
 	*/
 
-	return &device{uintptr(f)}, nil
+	return &device{fd: uintptr(f)}, nil
 }
 
 func (p *snd_pcm_hw_params) setInteger(param, val uint32) {
@@ -194,6 +197,9 @@ func formatBits(format uint32) uint32 {
 				return 32
 		*/
 	}
+}
+func (dev *device) sampleSize() uint32 {
+	return formatBits(uint32(dev.format)) / 8 * dev.channels
 }
 func (dev *device) setConfig(channels, rate uint32) error {
 	const (
@@ -260,15 +266,16 @@ func (dev *device) setConfig(channels, rate uint32) error {
 
 func (dev *device) write(frames []byte) (int, error) {
 	xfer := &snd_xferi{
-		frames: snd_pcm_uframes(len(frames) / 2), //TODO: change if we ever support more formats
+		frames: snd_pcm_uframes(len(frames) / int(dev.sampleSize())),
 		buf:    uintptr(unsafe.Pointer(&frames[0])),
 	}
 	err := ioctl(dev.fd, sndrvPcmIoctlWriteiFrames, uintptr(unsafe.Pointer(xfer)))
+	written := int(xfer.result) * int(dev.sampleSize())
 	if err != nil {
-		return int(xfer.result), fmt.Errorf("writing frame data: %s", err.Error())
+		return written, fmt.Errorf("writing frame data: %s", err.Error())
 	}
 
-	return int(xfer.result), nil
+	return written, nil
 }
 
 type Player struct {
@@ -290,7 +297,10 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	if err != nil {
 		return nil, err
 	}
-	err = dev.setConfig(uint32(channelNum), uint32(sampleRate))
+	dev.format = pcmFormatS16Le
+	dev.channels = uint32(channelNum)
+	dev.sampleRate = uint32(sampleRate)
+	err = dev.setConfig(dev.channels, dev.sampleRate)
 	if err != nil {
 		return nil, err
 	}
