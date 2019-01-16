@@ -95,12 +95,51 @@ type snd_xferi struct {
 	frames snd_pcm_uframes
 }
 
+type snd_pcm_mmap_status struct {
+	snd_pcm_state   uint32
+	pad1            uint32
+	hw_ptr          snd_pcm_uframes
+	stamp           syscall.Timespec
+	suspended_state uint32
+	audio_tstamp    syscall.Timespec
+	reserved        [4]byte //should be bumped to 64 bytes for alignment
+}
+type snd_pcm_mmap_control struct {
+	appl_ptr  snd_pcm_uframes
+	avail_min snd_pcm_uframes
+	reserved  [48]byte //bump to 64 bytes
+}
+
+type snd_pcm_sync_ptr struct {
+	flags uint32
+	s     snd_pcm_mmap_status
+	c     snd_pcm_mmap_control
+}
+
+type snd_pcm_status struct {
+	snd_pcm_state     uint32
+	trigger_tstamp    syscall.Timespec
+	tstamp            syscall.Timespec
+	appl_ptr          snd_pcm_uframes
+	hw_ptr            snd_pcm_uframes
+	delay             snd_pcm_uframes
+	avail             snd_pcm_uframes
+	avail_min         snd_pcm_uframes
+	overrange         snd_pcm_uframes
+	suspended_state   uint32
+	audio_tstamp_data uint32
+	audio_tstamp      syscall.Timespec
+	driver_tstamp     syscall.Timespec
+}
+
 const (
 	sndrvPcmIoctlInfo         = 0x81204101
 	sndrvPcmIoctlPrepare      = 0x004140
 	sndrvPcmIoctlHwParams     = 0xc2604111
 	sndrvPcmIoctlSwParams     = 0xc0884113
 	sndrvPcmIoctlWriteiFrames = 0x40184150
+	sndrvPcmIoctlSyncPtr      = 0xc0884123
+	sndrvPcmIoctlStatus       = 0x80984120
 )
 
 const (
@@ -140,6 +179,12 @@ const (
 	paramTickTime
 )
 
+const (
+	sndrvPcmSyncPtrHwsync = 1 << iota
+	sndrvPcmSyncPtrAppl
+	sndrvPcmSyncPtrAvailMin
+)
+
 func ioctl(fd, req, data uintptr) error {
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, req, data)
 	if errno != 0 {
@@ -149,6 +194,7 @@ func ioctl(fd, req, data uintptr) error {
 }
 
 func openDevice(devName string) (*device, error) {
+	//f, err := syscall.Open(devName, syscall.O_RDWR|syscall.O_NONBLOCK, 0644)
 	f, err := syscall.Open(devName, syscall.O_RDWR, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open alsa device %s: %s", devName, err.Error())
@@ -264,7 +310,21 @@ func (dev *device) setConfig(channels, rate uint32) error {
 	return nil
 }
 
+func (dev *device) avail() snd_pcm_uframes {
+	syncPtr := &snd_pcm_sync_ptr{
+		flags: sndrvPcmSyncPtrAvailMin,
+	}
+
+	err := ioctl(dev.fd, sndrvPcmIoctlSyncPtr, uintptr(unsafe.Pointer(syncPtr)))
+	if err != nil {
+		fmt.Println("Error sync ptr:", err)
+		return 0
+	}
+	return syncPtr.c.avail_min
+}
+
 func (dev *device) write(frames []byte) (int, error) {
+	//fmt.Printf("avail: %d\n", dev.avail())
 	xfer := &snd_xferi{
 		frames: snd_pcm_uframes(len(frames) / int(dev.sampleSize())),
 		buf:    uintptr(unsafe.Pointer(&frames[0])),
