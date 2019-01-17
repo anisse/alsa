@@ -247,11 +247,10 @@ func formatBits(format uint32) uint32 {
 func (dev *device) sampleSize() uint32 {
 	return formatBits(uint32(dev.format)) / 8 * dev.channels
 }
-func (dev *device) setConfig(channels, rate uint32) error {
+func (dev *device) setConfig(channels, rate, periodSize uint32) error {
 	const (
 		format      = pcmFormatS16Le
 		periodCount = 4
-		periodSize  = 1024
 	)
 
 	hwParams := &snd_pcm_hw_params{
@@ -272,8 +271,9 @@ func (dev *device) setConfig(channels, rate uint32) error {
 	hwParams.setInteger(paramRate, rate)
 	hwParams.setMask(maskParamFormat, format)
 	hwParams.setMask(maskParamSubformat, 0)
-	/* Other, default values */
 	hwParams.setMin(paramPeriodSize, periodSize)
+	hwParams.setMin(paramBufferSize, periodSize)
+	/* Other, default values */
 	hwParams.setInteger(paramSampleBits, formatBits(format))
 	hwParams.setInteger(paramFrameBits, formatBits(format)*channels)
 	hwParams.setInteger(paramPeriods, periodCount)
@@ -344,7 +344,6 @@ type Player struct {
 	*device
 }
 
-//TODO: bufferSize is ignored, pass it down as period_size
 func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*Player, error) {
 	if channelNum != 2 {
 		return nil, fmt.Errorf("only two channel mode is supported, please convert your samples")
@@ -362,7 +361,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	dev.format = pcmFormatS16Le
 	dev.channels = uint32(channelNum)
 	dev.sampleRate = uint32(sampleRate)
-	err = dev.setConfig(dev.channels, dev.sampleRate)
+	err = dev.setConfig(dev.channels, dev.sampleRate, uint32(bufferSizeInBytes)/dev.sampleSize())
 	if err != nil {
 		return nil, err
 	}
